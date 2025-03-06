@@ -107,7 +107,7 @@ void loop() {
       state = incoming_message.buf[1];  
       buzz_played_response(state);
     }
-    else if (incoming_message.id == 0x203){
+    else if (incoming_message.id == 0x444){
       speed = incoming_message.buf[0];
       motor_temperature = incoming_message.buf[1];
       battery_percentage = incoming_message.buf[2];
