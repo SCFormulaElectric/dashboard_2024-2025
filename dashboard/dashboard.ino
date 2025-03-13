@@ -91,10 +91,10 @@ void loop() {
   /*
     Actual Sender
   */
-  sendNumberToNextion("numbattery", battery_percentage);
-  sendNumberToNextion("numspeed", speed);
-  sendNumberToNextion("numtemp", ctof(motor_temperature)); // why are we using F instead of C?
-  sendNumberToNextion("t4", ctof(motor_controller_temperature));
+  sendNumberToNextion("battery", battery_percentage);
+  sendNumberToNextion("speed", speed);
+  sendNumberToNextion("mtrtemp", ctof(motor_temperature)); // why are we using F instead of C?
+  sendNumberToNextion("mtrctrltemp", ctof(motor_controller_temperature));
   // As of 2025/01/29, this part of the code has been verified to be working. -Qizhe Yang-
 
   /* 
@@ -152,7 +152,7 @@ float ctof (int c) {
 void sendNumberToNextion(String component, float value) {
   // Send the command to update the text component with the value
   Serial3.print(component);     // Component name, e.g., "t0"
-  Serial3.print(".txt=\"");     // For a text field
+  Serial3.print(".val=\"");     // For a text field
   Serial3.print(value);         // Value to display
   Serial3.print("\"");          // End the string value
 
