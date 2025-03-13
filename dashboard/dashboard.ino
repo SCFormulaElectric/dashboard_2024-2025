@@ -152,7 +152,7 @@ float ctof (int c) {
 void sendNumberToNextion(String component, float value) {
   // Send the command to update the text component with the value
   Serial3.print(component);     // Component name, e.g., "t0"
-  Serial3.print(".val=\"");     // For a text field
+  Serial3.print(".txt=\"");     // For a text field
   Serial3.print(value);         // Value to display
   Serial3.print("\"");          // End the string value
 
