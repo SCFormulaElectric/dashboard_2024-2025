@@ -37,9 +37,6 @@ CAN_message_t incoming_message;
 // CAN message from 
 
 void setup() {
-  // Start serial communication with Nextion display
-  // Serial.begin(9600);
-
   /*
     It should be known that Serial is the object for communication with the Serial Monitor function on the Arduino IDE.
     This Serial output can also be monitored using a python file.
@@ -51,7 +48,6 @@ void setup() {
   // Serial2.setTX(14);
   // Serial2.setRX(15);
   // unsure if 14, 15 is serial3
-
   Serial3.begin(9600);    // RXTX
 
   // Can communication
@@ -63,39 +59,12 @@ void setup() {
 }
 
 void loop() {
+  sendNumberToNextion("mtrtemp", motor_temperature);  
+  sendNumberToNextion("numbat", battery_percentage);  
+  sendNumberToNextion("probat", battery_percentage);  
+  sendNumberToNextion("numspeed", speed);  
+  sendNumberToNextion("mtrctrltemp", motor_controller_temperature);  
 
-  // Send the number to a text component (e.g., "t0" on the Nextion)
-  // sendNumberToNextion("t0", 666); // this is not to be changed. However, the down left name have to be changed to Motor Temp (C)
-  
-  // // Debug info
-  // Serial.println("Sending something");
-  // Serial2.print(12345);
-  // Serial2.write(0xFF);
-
-  // if (Serial.available()) { // added boolean
-  
-  //   Serial.println("Now Sending..."); // See on Teensy end if it is sending now
-  //   Serial.println("Now Receiving...");
-
-  //   Serial.print("Battery: ");
-  //   Serial.println(battery_percentage);
-
-  //   Serial.print("Speed: ");
-  //   Serial.println(speed);
-
-  //   Serial.print("Temperature: ");
-  //   Serial.println(ctof(motor_temperature));
-
-  // }
-
-  /*
-    Actual Sender
-  */
-  sendNumberToNextion("numbattery", battery_percentage);
-  sendNumberToNextion("numspeed", speed);
-  sendNumberToNextion("numtemp", ctof(motor_temperature)); // why are we using F instead of C?
-  sendNumberToNextion("t4", ctof(motor_controller_temperature));
-  // As of 2025/01/29, this part of the code has been verified to be working. -Qizhe Yang-
 
   /* 
     Check if received the buzzer message from VCU 
@@ -109,17 +78,11 @@ void loop() {
     }
     else if (incoming_message.id == 0x444){
       speed = incoming_message.buf[0];
-      motor_temperature = incoming_message.buf[1];
+      motor_temperature = ctof(incoming_message.buf[1]);
       battery_percentage = incoming_message.buf[2];
-      motor_controller_temperature = incoming_message.buf[3];
+      motor_controller_temperature = ctof(incoming_message.buf[3]);
     }
   }
-  // As of 2025/01/29, this part, doubtly the CANBUS, is not working.
-  // This might not have a problem, but just need the external CAN module on the teensy to work
-
-
-  // Delay for a second
-  // delay(1000);  delay used for dashboard refresh
 }
 
 /*
@@ -131,8 +94,8 @@ void loop() {
     float: gives back the farenheit value
 */
 
-float ctof (int c) {
-  return c*1.8 + 32;
+int ctof (int c) {
+  return floor(c*1.8 + 32);
 }
 
 /* 
@@ -149,13 +112,11 @@ float ctof (int c) {
 */
 
 // Function to send a number to a Nextion component
-void sendNumberToNextion(String component, float value) {
+void sendNumberToNextion(String component, int value) {
   // Send the command to update the text component with the value
-  Serial3.print(component);     // Component name, e.g., "t0"
-  Serial3.print(".txt=\"");     // For a text field
-  Serial3.print(value);         // Value to display
-  Serial3.print("\"");          // End the string value
-
+  Serial3.print(component);
+  Serial3.print(".val=");
+  Serial3.print(value);
   sendEndCommand();
 }
 
@@ -173,7 +134,6 @@ void sendNumberToNextion(String component, float value) {
 void buzz_played_response(int state) {
   dash_vcu_buzzPlayed.buf[1] = state;
   can1.write(dash_vcu_buzzPlayed); // some code to make buzz
-  // Serial.write("sent buzz message validation"); // Validation passed
   }
 
 /* 
@@ -190,10 +150,6 @@ void buzz_played_response(int state) {
 // Function to send the end command required by Nextion
 
 void sendEndCommand() {
-  // Serial.write(0xFF);  // End of command character (0xFF) sent three times
-  // Serial.write(0xFF);
-  // Serial.write(0xFF);
-
   Serial3.write(0xFF);
   Serial3.write(0xFF);
   Serial3.write(0xFF);
