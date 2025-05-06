@@ -13,6 +13,8 @@
   12/02/24 Need to handle receive messages from can to update the dashboard
   01/27/25 Fixed the serial port issue. Tested RX/TX com with Nextion Display.
   - Need testings on CAN with GEVCU and BMS
+  04/28/25 Migrated reading speed, motor temp, and motor controller temp  
+    reading to teensy from gevcu to decrease # of msgs sent on bus
 */
 
 // Define the CAN bus settings
@@ -33,6 +35,84 @@ CAN_message_t dash_vcu_buzzPlayed;
 // you might need to change this in a fat 
 // if loop to sift through the messages
 CAN_message_t incoming_message; 
+
+// LUT for motor temperature
+static const struct {
+    int32_t value;  
+    int16_t tempC; 
+} motorTempLookup[] = {
+    {7414, -35}, {7687, -30}, {7962, -25}, {8240, -20}, {8520, -15},
+    {8802, -10}, {9085, -5},  {9369,  0},  {9654,  5},  {9939, 10},
+    {10225, 15}, {10510, 20}, {10795, 25}, {11080, 30}, {11364, 35},
+    {11646, 40}, {11927, 45}, {12207, 50}, {12485, 55}, {12762, 60},
+    {13036, 65}, {13308, 70}, {13578, 75}, {13846, 80}, {14111, 85},
+    {14373, 90}, {14633, 95}, {14890, 100}, {15144, 105}, {15391, 110},
+    {15632, 115}, {15852, 120}, {16061, 125}, {16251, 130}, {16421, 135},
+    {16569, 140}, {16692, 145}, {16789, 150}, {16857, 155}
+};
+
+/************************************************
+  motorToCelsius: 
+    Function to convert motor temp to celsius
+  Args: 
+    reading (uint_16_t): first parameter
+      raw hex bytes of the motor temperature msg
+  Returns:
+    double
+************************************************/
+double motorToCelsius(const uint16_t reading) const {
+    for (int i = 1; i < (int)(sizeof(motorTempLookup) / sizeof(motorTempLookup[0])); ++i) {
+        if (reading <= motorTempLookup[i].value) {
+            double t1 = motorTempLookup[i-1].tempC;
+            double t2 = motorTempLookup[i].tempC;
+            double v1 = motorTempLookup[i-1].value;
+            double v2 = motorTempLookup[i].value;
+
+            double ratio = (reading - v1) / (v2 - v1);
+            return t1 + ratio * (t2 - t1);
+        }
+    }
+    return (double)motorTempLookup[sizeof(motorTempLookup) / sizeof(motorTempLookup[0]) - 1].tempC;
+}
+
+// LUT for motor controller temperature 
+static const struct {
+      int16_t tempC;
+      uint16_t value;
+  } controllerTempLookup[] = {
+      { 125, 28480 }, { 120, 28179 }, { 115, 27851 }, { 110, 27497 },
+      { 105, 27114 }, { 100, 26702 }, {  95, 26261 }, {  90, 25792 },
+      {  85, 25296 }, {  80, 24775 }, {  75, 24232 }, {  70, 23671 },
+      {  65, 23097 }, {  60, 22515 }, {  55, 21933 }, {  50, 21357 },
+      {  45, 20793 }, {  40, 20250 }, {  35, 19733 }, {  30, 19247 },
+      {  25, 18797 }, {  20, 18387 }, {  15, 18017 }, {  10, 17688 },
+      {   5, 17400 }, {   0, 17151 }, {  -5, 16938 }, { -10, 16757 },
+      { -15, 16609 }, { -20, 16487 }, { -25, 16387 }, { -30, 16308 }
+  };
+
+/************************************************
+  motorControllerToCelsius: 
+    Function to convert motor controller temp to celsius
+  Args: 
+    reading (uint_16_t): first parameter
+      raw hex bytes of the motor controller temperature msg
+  Returns:
+    double
+************************************************/
+double motorControllerToCelsius(const uint16_t reading) const {
+    for (int i = 1; i < (int)(sizeof(controllerTempLookup) / sizeof(controllerTempLookup[0])); ++i) {
+        if (reading >= controllerTempLookup[i].value) {
+            double t1 = controllerTempLookup[i-1].tempC;
+            double t2 = controllerTempLookup[i].tempC;
+            double v1 = controllerTempLookup[i-1].value;
+            double v2 = controllerTempLookup[i].value;
+
+            double ratio = (reading - v2) / (v1 - v2);
+            return t2 + ratio * (t1 - t2);
+        }
+    }
+    return (double)controllerTempLookup[sizeof(controllerTempLookup) / sizeof(controllerTempLookup[0]) - 1].tempC;
+}
 
 // CAN message from 
 
@@ -76,33 +156,59 @@ void loop() {
     if (incoming_message.id == 0x109 && incoming_message.buf[0] == 0x1) {
       state = incoming_message.buf[1];  
       buzz_played_response(state);
-    }
-    else if (incoming_message.id == 0x444){
+
+    } else if (incoming_message.id == 0x444){                       // slotted for deletion
       speed = incoming_message.buf[0];
       motor_temperature = ctof(incoming_message.buf[1]);
       battery_percentage = incoming_message.buf[2];
       motor_controller_temperature = ctof(incoming_message.buf[3]);
+
+    } else if (incoming_message.id == 0x30){                        // speed
+      speed = decode_hex(incoming_message.buf[1], incoming_message.buf[2]); 
+
+    } else if (incoming_message.id == 0x4a){                        // motor controller temp
+      motor_controller_temperature = decode_hex(incoming_message.buf[1], incoming_message.buf[2]);  
+      bamocar_temp =ctof(motorControllerToCelsius(bamocar_temp));
+
+    } else if (incoming_message.id == 0x49){                        // motor temp 
+      motor_temperature = decode_hex(incoming_message.buf[1], incoming_message.buf[2]); 
+      motor_temp = ctof(motorToCelsius(motor_temp));
+
     }
     else{
       switch (incoming_message.id):
     }
   }
 }
+/************************************************
+  decode_hex(): 
+    celcius to farenheit 
+  Args: 
+    first_half  (int_64_t): first half of the bytes 
+    second_half (int_64_t): second half of the bytes
+  Returns:
+    float: gives back the farenheit value
+************************************************/
 
-/*
+int decode_hex(const int64_t first_half, const int64_t second_half) const{
+    //second_half has 256 more weight since it is in the 2nd place of base 16, 16^2 = 256.
+    return second_half * 256 + first_half;
+}
+
+/************************************************
   ctof(): 
     celcius to farenheit 
   Args: 
     c (int): celcius input 
   Returns:
     float: gives back the farenheit value
-*/
+************************************************/
 
 int ctof (int c) {
   return floor(c*1.8 + 32);
 }
 
-/* 
+/************************************************
   sendNumberToNextion(): 
     Function to send a number to a Nextion component
 
@@ -113,7 +219,7 @@ int ctof (int c) {
       value to show on display
   Returns:
     void 
-*/
+************************************************/
 
 // Function to send a number to a Nextion component
 void sendNumberToNextion(String component, int value) {
@@ -124,7 +230,7 @@ void sendNumberToNextion(String component, int value) {
   sendEndCommand();
 }
 
-/* 
+/************************************************
   buzz_played_response(): 
     Sends a message to the VCU that the buzzer has been played 
 
@@ -133,12 +239,11 @@ void sendNumberToNextion(String component, int value) {
       takes the state of the recieved message and sends it back
   Returns:
     void 
-*/
-
+************************************************/
 void buzz_played_response(int state) {
   dash_vcu_buzzPlayed.buf[1] = state;
   can1.write(dash_vcu_buzzPlayed); // some code to make buzz
-  }
+}
 
 
 /*
@@ -169,7 +274,7 @@ void setErrorMessage(const String& msg) {
 
   Returns:
     void 
-*/
+************************************************/
 
 // Function to send the end command required by Nextion
 
