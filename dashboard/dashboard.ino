@@ -20,7 +20,7 @@ FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> can1;
 
 //speed, battery percetage, motor temp, motor controller temperature?
 int i = 0;
-int speed = 0;
+int speed = 50;
 int motor_temperature = 0;
 int motor_controller_temperature = 0;
 int battery_percentage = 0;
@@ -42,7 +42,7 @@ void setup() {
     This Serial output can also be monitored using a python file.
     Please refer to the readTeensyOutputPython/main.py for more information.
   */
-
+  Serial.begin(9600);
   // This set is included to ensure 
   // that 7 and 8 are the ideal port used
   // Serial2.setTX(14);
@@ -59,10 +59,11 @@ void setup() {
 }
 
 void loop() {
+  Serial.println("hi");
   sendNumberToNextion("mtrtemp", motor_temperature);  
   sendNumberToNextion("numbat", battery_percentage);  
   sendNumberToNextion("probat", battery_percentage);  
-  sendNumberToNextion("numspeed", speed);  
+  sendNumberToNextion("numspeed", 50);  
   sendNumberToNextion("mtrctrltemp", motor_controller_temperature);  
 
 
@@ -81,6 +82,9 @@ void loop() {
       motor_temperature = ctof(incoming_message.buf[1]);
       battery_percentage = incoming_message.buf[2];
       motor_controller_temperature = ctof(incoming_message.buf[3]);
+    }
+    else{
+      switch (incoming_message.id):
     }
   }
 }
@@ -136,6 +140,26 @@ void buzz_played_response(int state) {
   can1.write(dash_vcu_buzzPlayed); // some code to make buzz
   }
 
+
+/*
+Displays an error message for 3 seconds, before clearing
+and displaying nothing.
+
+  Args:
+    msg (String): first parameter
+        the message to display on the screen
+  Returns:
+    void
+  
+  Example msg: "Error:\r\nBMS TOO HOT"  (the \r\n is for a new line)
+*/
+void setErrorMessage(const String& msg) {
+  Serial3.print("errormsg.txt=\"" + msg + "\"");
+  sendEndCommand();
+  Serial3.print("tm_errormsg.en=1"); // Enables the timer so that after 3 seconds it will stop displaying.
+  sendEndCommand();
+}
+
 /* 
   sendEndCommand(): 
     Function to send the end command required by Nextion Protocol
@@ -154,3 +178,6 @@ void sendEndCommand() {
   Serial3.write(0xFF);
   Serial3.write(0xFF);
 }
+
+
+
