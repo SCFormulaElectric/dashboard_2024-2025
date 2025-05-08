@@ -139,7 +139,6 @@ void setup() {
 }
 
 void loop() {
-  Serial.println("hi");
   sendNumberToNextion("mtrtemp", motor_temperature);  
   sendNumberToNextion("numbat", battery_percentage);  
   sendNumberToNextion("probat", battery_percentage);  
@@ -156,27 +155,26 @@ void loop() {
     if (incoming_message.id == 0x109 && incoming_message.buf[0] == 0x1) {
       state = incoming_message.buf[1];  
       buzz_played_response(state);
-
-    } else if (incoming_message.id == 0x444){                       // slotted for deletion
-      speed = incoming_message.buf[0];
-      motor_temperature = ctof(incoming_message.buf[1]);
-      battery_percentage = incoming_message.buf[2];
-      motor_controller_temperature = ctof(incoming_message.buf[3]);
-
+    
     } else if (incoming_message.id == 0x30){                        // speed
       speed = decode_hex(incoming_message.buf[1], incoming_message.buf[2]); 
-
+    
     } else if (incoming_message.id == 0x4a){                        // motor controller temp
       motor_controller_temperature = decode_hex(incoming_message.buf[1], incoming_message.buf[2]);  
-      bamocar_temp =ctof(motorControllerToCelsius(bamocar_temp));
+      motor_controller_temperature = ctof(motorControllerToCelsius(motor_controller_temperature));
 
     } else if (incoming_message.id == 0x49){                        // motor temp 
       motor_temperature = decode_hex(incoming_message.buf[1], incoming_message.buf[2]); 
-      motor_temp = ctof(motorToCelsius(motor_temp));
-
-    }
-    else{
-      switch (incoming_message.id):
+      motor_temperature = ctof(motorToCelsius(motor_temperature));
+    
+    }    else{                                                      // Errors from the Car to Display
+      switch (incoming_message.id){
+        case 0x500: //PotBrake error messages
+          sendPotbrakeError(incoming_message.buf[0]);
+          break;
+        case 0x501: //PotThrottle error messages 
+          break;
+      }
     }
   }
 }
@@ -284,5 +282,21 @@ void sendEndCommand() {
   Serial3.write(0xFF);
 }
 
+enum ThrottleStatus {
+    OK,
+    ERR_LOW_T1,
+    ERR_LOW_T2,
+    ERR_HIGH_T1,
+    ERR_HIGH_T2,
+    ERR_MISMATCH,
+    ERR_MISC
+};
+
+void sendPotBrakeError(uint_8 error){
+  switch (error){
+    case 1:
+      setErrorMessage("Throttle 1 \r\n too low");
+  }
+}
 
 
