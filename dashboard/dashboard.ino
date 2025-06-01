@@ -22,12 +22,20 @@ FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> can1;
 
 //speed, battery percetage, motor temp, motor controller temperature?
 int i = 0;
-int speed = 50;
+int speed = 0;
 int motor_temperature = 0;
 int motor_controller_temperature = 0;
 int battery_percentage = 0;
 int state;
-
+int BMS_PIN = 7;
+int IMD_PIN = 8;
+int RESET_PIN = 9;
+int BMS_LED = 10;
+int IMD_LED = 11;
+int BUZZER_PIN = 4;
+// bool LED_ON = false;
+int bms_fault;
+int imd_fault;
 // convention for CAN messages: source_dest_label
 CAN_message_t dash_vcu_buzzPlayed;
 
@@ -60,7 +68,7 @@ static const struct {
   Returns:
     double
 ************************************************/
-double motorToCelsius(const uint16_t reading) const {
+int motorToCelsius(uint16_t reading) {
     for (int i = 1; i < (int)(sizeof(motorTempLookup) / sizeof(motorTempLookup[0])); ++i) {
         if (reading <= motorTempLookup[i].value) {
             double t1 = motorTempLookup[i-1].tempC;
@@ -69,10 +77,11 @@ double motorToCelsius(const uint16_t reading) const {
             double v2 = motorTempLookup[i].value;
 
             double ratio = (reading - v1) / (v2 - v1);
-            return t1 + ratio * (t2 - t1);
+            double result = t1 + ratio * (t2 - t1);
+            return (int)result; // Truncate fractional part
         }
     }
-    return (double)motorTempLookup[sizeof(motorTempLookup) / sizeof(motorTempLookup[0]) - 1].tempC;
+    return (int)motorTempLookup[sizeof(motorTempLookup) / sizeof(motorTempLookup[0]) - 1].tempC;
 }
 
 // LUT for motor controller temperature 
@@ -99,7 +108,7 @@ static const struct {
   Returns:
     double
 ************************************************/
-double motorControllerToCelsius(const uint16_t reading) const {
+int motorControllerToCelsius(uint16_t reading) {
     for (int i = 1; i < (int)(sizeof(controllerTempLookup) / sizeof(controllerTempLookup[0])); ++i) {
         if (reading >= controllerTempLookup[i].value) {
             double t1 = controllerTempLookup[i-1].tempC;
@@ -108,10 +117,25 @@ double motorControllerToCelsius(const uint16_t reading) const {
             double v2 = controllerTempLookup[i].value;
 
             double ratio = (reading - v2) / (v1 - v2);
-            return t2 + ratio * (t1 - t2);
+            double result = t2 + ratio * (t1 - t2);
+            return (int)result; // Truncate fractional part
         }
     }
-    return (double)controllerTempLookup[sizeof(controllerTempLookup) / sizeof(controllerTempLookup[0]) - 1].tempC;
+    return (int)controllerTempLookup[sizeof(controllerTempLookup) / sizeof(controllerTempLookup[0]) - 1].tempC;
+}
+
+
+int speedToMPH(uint16_t reading) {
+    const int NMAX_IN_NDRIVE = 5000; 
+    const double gearRatio = 3.25;                
+    const int wheelDiameterInInches = 15;    
+
+    double percentage = (double) reading / 32767.0;
+    double motorRPM = percentage * NMAX_IN_NDRIVE;
+    double wheelRPM = motorRPM / gearRatio;
+    double mph = (wheelRPM * 3.14159265359 * wheelDiameterInInches) / 1056.0;
+
+    return (int)mph; 
 }
 
 // CAN message from 
@@ -123,16 +147,23 @@ void setup() {
     Please refer to the readTeensyOutputPython/main.py for more information.
   */
   Serial.begin(9600);
-  // This set is included to ensure 
-  // that 7 and 8 are the ideal port used
-  // Serial2.setTX(14);
-  // Serial2.setRX(15);
+
   // unsure if 14, 15 is serial3
   Serial3.begin(9600);    // RXTX
 
   // Can communication
   can1.begin();   // CAN communication
-  can1.setBaudRate(500000); //bit rate of 500kbs
+  can1.setBaudRate(500000);
+
+  pinMode(BMS_PIN, INPUT_PULLUP);
+  pinMode(IMD_PIN, INPUT_PULLDOWN);
+  pinMode(RESET_PIN, INPUT_PULLUP);
+  // pinMode(13, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(BMS_LED, OUTPUT);
+  digitalWrite(BMS_LED, HIGH);
+  pinMode(IMD_LED, OUTPUT);
+  digitalWrite(BMS_LED, HIGH);
 
   dash_vcu_buzzPlayed.id = 0x110;
   dash_vcu_buzzPlayed.buf[0] = 0x1;
@@ -142,8 +173,11 @@ void loop() {
   sendNumberToNextion("mtrtemp", motor_temperature);  
   sendNumberToNextion("numbat", battery_percentage);  
   sendNumberToNextion("probat", battery_percentage);  
-  sendNumberToNextion("numspeed", 50);  
+  sendNumberToNextion("numspeed", speed);  
   sendNumberToNextion("mtrctrltemp", motor_controller_temperature);  
+  updateMotorTemperatureColor(motor_temperature);
+  updateMotorControllerTemperatureColor(motor_controller_temperature);
+  updateLights();
 
 
   /* 
@@ -152,29 +186,36 @@ void loop() {
     'sendResponse(blah,blah)'
   */
   if (can1.read(incoming_message)) {
+    // digitalWrite(13, LED_ON);
+    // LED_ON = !LED_ON;
     if (incoming_message.id == 0x109 && incoming_message.buf[0] == 0x1) {
       state = incoming_message.buf[1];  
       buzz_played_response(state);
-    
-    } else if (incoming_message.id == 0x30){                        // speed
-      speed = decode_hex(incoming_message.buf[1], incoming_message.buf[2]); 
-    
-    } else if (incoming_message.id == 0x4a){                        // motor controller temp
-      motor_controller_temperature = decode_hex(incoming_message.buf[1], incoming_message.buf[2]);  
-      motor_controller_temperature = ctof(motorControllerToCelsius(motor_controller_temperature));
 
-    } else if (incoming_message.id == 0x49){                        // motor temp 
-      motor_temperature = decode_hex(incoming_message.buf[1], incoming_message.buf[2]); 
-      motor_temperature = ctof(motorToCelsius(motor_temperature));
     
-    }    else{                                                      // Errors from the Car to Display
-      switch (incoming_message.id){
-        case 0x500: //PotBrake error messages
-          sendPotbrakeError(incoming_message.buf[0]);
-          break;
-        case 0x501: //PotThrottle error messages 
-          break;
+    } else if (incoming_message.id == 0x181){      //from the bamocar                  
+      if (incoming_message.buf[0] == 0x30){// speed
+        speed = decode_hex(incoming_message.buf[1], incoming_message.buf[2]); 
+        speed = speedToMPH(speed);
       }
+      else if (incoming_message.buf[0] == 0x4a){                        // motor controller temp
+      motor_controller_temperature = decode_hex(incoming_message.buf[1], incoming_message.buf[2]);  
+      motor_controller_temperature = (motorControllerToCelsius(motor_controller_temperature));
+      } else if (incoming_message.buf[0] == 0x49){                        // motor temp 
+        motor_temperature = decode_hex(incoming_message.buf[1], incoming_message.buf[2]); 
+        motor_temperature = (motorToCelsius(motor_temperature));
+      
+      } 
+    } else if (incoming_message.id == 0x501) {
+      battery_percentage = incoming_message.buf[0];
+    } else {                                                      // Errors from the Car to Display
+      // switch (incoming_message.id){
+      //   case 0x500: //PotBrake error messages
+      //     sendPotbrakeError(incoming_message.buf[0]);
+      //     break;
+      //   case 0x501: //PotThrottle error messages 
+      //     break;
+      // }
     }
   }
 }
@@ -188,7 +229,7 @@ void loop() {
     float: gives back the farenheit value
 ************************************************/
 
-int decode_hex(const int64_t first_half, const int64_t second_half) const{
+int decode_hex( int64_t first_half,  int64_t second_half) {
     //second_half has 256 more weight since it is in the 2nd place of base 16, 16^2 = 256.
     return second_half * 256 + first_half;
 }
@@ -241,6 +282,9 @@ void sendNumberToNextion(String component, int value) {
 void buzz_played_response(int state) {
   dash_vcu_buzzPlayed.buf[1] = state;
   can1.write(dash_vcu_buzzPlayed); // some code to make buzz
+  digitalWrite(BUZZER_PIN, HIGH);
+  delay(3000);
+  digitalWrite(BUZZER_PIN, LOW);
 }
 
 
@@ -282,6 +326,59 @@ void sendEndCommand() {
   Serial3.write(0xFF);
 }
 
+void updateMotorTemperatureColor(int motor_temperature){
+  if (motor_controller_temperature > 85){ // RED
+    Serial3.print("mtrctrltemp.pco=63488");
+  }
+  else if (motor_controller_temperature > 70){ // YELLOW
+    Serial3.print("mtrctrltemp.pco=50688");
+  }
+  else if  (motor_controller_temperature > 60){ // Black
+    Serial3.print("mtrctrltemp.pco=0");
+  }
+  sendEndCommand();
+}
+
+void updateMotorControllerTemperatureColor(int motor_controller_temperature){
+  if (motor_controller_temperature > 85){ // RED
+    Serial3.print("mtrtemp.pco=63488");
+  }
+  else if (motor_controller_temperature > 70){ // YELLOW
+    Serial3.print("mtrtemp.pco=50688");
+  }
+  else if  (motor_controller_temperature > 60){ // Black
+    Serial3.print("mtrtemp.pco=0");
+  }
+  sendEndCommand();
+}
+
+void updateLights(){
+  if (!digitalRead(BMS_PIN)){
+      bms_fault = 1;
+  }
+
+  if (bms_fault){
+      digitalWrite(BMS_LED, LOW);
+  }
+
+  if (!digitalRead(IMD_PIN)){
+      imd_fault = 1;
+  }
+
+  if (imd_fault){
+      digitalWrite(IMD_LED, LOW);
+  }
+
+  if (bms_fault || imd_fault){
+    if (!digitalRead(RESET_PIN) && digitalRead(BMS_PIN) && !digitalRead(IMD_PIN))
+    {
+      bms_fault = 0;
+      imd_fault = 0;
+      digitalWrite(BMS_LED, HIGH);
+      digitalWrite(IMD_LED, HIGH);
+    }
+  }
+}
 enum ThrottleStatus {
     OK,
     ERR_LOW_T1,
@@ -292,11 +389,11 @@ enum ThrottleStatus {
     ERR_MISC
 };
 
-void sendPotBrakeError(uint_8 error){
-  switch (error){
-    case 1:
-      setErrorMessage("Throttle 1 \r\n too low");
-  }
-}
+// void sendPotBrakeError(uint_8 error){
+//   switch (error){
+//     case 1:
+//       setErrorMessage("Throttle 1 \r\n too low");
+//   }
+// }
 
 
