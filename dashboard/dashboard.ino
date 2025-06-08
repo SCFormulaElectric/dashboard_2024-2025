@@ -129,11 +129,11 @@ int speedToMPH(uint16_t reading) {
     const int NMAX_IN_NDRIVE = 5000; 
     const double gearRatio = 3.25;                
     const int wheelDiameterInInches = 15;    
-
+    const double effeciency = 0.93;
     double percentage = (double) reading / 32767.0;
     double motorRPM = percentage * NMAX_IN_NDRIVE;
     double wheelRPM = motorRPM / gearRatio;
-    double mph = (wheelRPM * 3.14159265359 * wheelDiameterInInches) / 1056.0;
+    double mph = (wheelRPM * 3.14159265359 * wheelDiameterInInches) / 1056.0 * effeciency;
 
     return (int)mph; 
 }
@@ -163,7 +163,7 @@ void setup() {
   pinMode(BMS_LED, OUTPUT);
   digitalWrite(BMS_LED, HIGH);
   pinMode(IMD_LED, OUTPUT);
-  digitalWrite(BMS_LED, HIGH);
+  digitalWrite(IMD_LED, HIGH);
 
   dash_vcu_buzzPlayed.id = 0x110;
   dash_vcu_buzzPlayed.buf[0] = 0x1;
@@ -206,8 +206,8 @@ void loop() {
         motor_temperature = (motorToCelsius(motor_temperature));
       
       } 
-    } else if (incoming_message.id == 0x501) {
-      battery_percentage = incoming_message.buf[0];
+    } else if (incoming_message.id == 0x301) {
+      battery_percentage = incoming_message.buf[4]/2;
     } else {                                                      // Errors from the Car to Display
       // switch (incoming_message.id){
       //   case 0x500: //PotBrake error messages
@@ -229,7 +229,7 @@ void loop() {
     float: gives back the farenheit value
 ************************************************/
 
-int decode_hex( int64_t first_half,  int64_t second_half) {
+int decode_hex( uint8_t first_half,  uint8_t second_half) {
     //second_half has 256 more weight since it is in the 2nd place of base 16, 16^2 = 256.
     return second_half * 256 + first_half;
 }
@@ -326,7 +326,7 @@ void sendEndCommand() {
   Serial3.write(0xFF);
 }
 
-void updateMotorTemperatureColor(int motor_temperature){
+void updateMotorControllerTemperatureColor(int motor_controller_temperature){
   if (motor_controller_temperature > 85){ // RED
     Serial3.print("mtrctrltemp.pco=63488");
   }
@@ -339,14 +339,14 @@ void updateMotorTemperatureColor(int motor_temperature){
   sendEndCommand();
 }
 
-void updateMotorControllerTemperatureColor(int motor_controller_temperature){
-  if (motor_controller_temperature > 85){ // RED
+void updateMotorTemperatureColor(int motor_temperature){
+  if (motor_temperature > 85){ // RED
     Serial3.print("mtrtemp.pco=63488");
   }
-  else if (motor_controller_temperature > 70){ // YELLOW
+  else if (motor_temperature > 70){ // YELLOW
     Serial3.print("mtrtemp.pco=50688");
   }
-  else if  (motor_controller_temperature > 60){ // Black
+  else if  (motor_temperature > 60){ // Black
     Serial3.print("mtrtemp.pco=0");
   }
   sendEndCommand();
@@ -379,21 +379,3 @@ void updateLights(){
     }
   }
 }
-enum ThrottleStatus {
-    OK,
-    ERR_LOW_T1,
-    ERR_LOW_T2,
-    ERR_HIGH_T1,
-    ERR_HIGH_T2,
-    ERR_MISMATCH,
-    ERR_MISC
-};
-
-// void sendPotBrakeError(uint_8 error){
-//   switch (error){
-//     case 1:
-//       setErrorMessage("Throttle 1 \r\n too low");
-//   }
-// }
-
-
