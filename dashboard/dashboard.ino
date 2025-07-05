@@ -30,12 +30,12 @@ int state;
 int BMS_PIN = 7;
 int IMD_PIN = 8;
 int RESET_PIN = 9;
-int BMS_LED = 10;
-int IMD_LED = 11;
+int BMS_LED = 11;
+int IMD_LED = 10;
 int BUZZER_PIN = 4;
-// bool LED_ON = false;
-int bms_fault;
-int imd_fault;
+bool LED_ON = false;
+int bms_fault = 0;
+int imd_fault = 0;
 // convention for CAN messages: source_dest_label
 CAN_message_t dash_vcu_buzzPlayed;
 
@@ -155,10 +155,10 @@ void setup() {
   can1.begin();   // CAN communication
   can1.setBaudRate(500000);
 
-  pinMode(BMS_PIN, INPUT_PULLUP);
-  pinMode(IMD_PIN, INPUT_PULLDOWN);
-  pinMode(RESET_PIN, INPUT_PULLUP);
-  // pinMode(13, OUTPUT);
+  pinMode(BMS_PIN, INPUT);
+  pinMode(IMD_PIN, INPUT);
+  pinMode(RESET_PIN, INPUT);
+  pinMode(13, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(BMS_LED, OUTPUT);
   digitalWrite(BMS_LED, HIGH);
@@ -167,6 +167,8 @@ void setup() {
 
   dash_vcu_buzzPlayed.id = 0x110;
   dash_vcu_buzzPlayed.buf[0] = 0x1;
+
+  // added pin mode
 }
 
 void loop() {
@@ -177,7 +179,6 @@ void loop() {
   sendNumberToNextion("mtrctrltemp", motor_controller_temperature);  
   updateMotorTemperatureColor(motor_temperature);
   updateMotorControllerTemperatureColor(motor_controller_temperature);
-  updateLights();
 
 
   /* 
@@ -186,8 +187,8 @@ void loop() {
     'sendResponse(blah,blah)'
   */
   if (can1.read(incoming_message)) {
-    // digitalWrite(13, LED_ON);
-    // LED_ON = !LED_ON;
+    digitalWrite(13, LED_ON);
+    LED_ON = !LED_ON;
     if (incoming_message.id == 0x109 && incoming_message.buf[0] == 0x1) {
       state = incoming_message.buf[1];  
       buzz_played_response(state);
@@ -218,6 +219,37 @@ void loop() {
       // }
     }
   }
+
+  if(!digitalRead(BMS_PIN)){
+    bms_fault = 1; 
+  }
+
+  if(bms_fault){
+    digitalWrite(BMS_LED, LOW);
+  }
+
+  if(digitalRead(IMD_PIN)){
+    imd_fault = 1;
+  }
+
+  if(imd_fault){
+      digitalWrite(IMD_LED, LOW);
+  }
+
+  if(bms_fault){
+    if(!digitalRead(RESET_PIN) && digitalRead(BMS_PIN)){
+      bms_fault = 0;
+      digitalWrite(BMS_LED, HIGH);
+    }
+  }
+
+  if(imd_fault){
+    if(!digitalRead(RESET_PIN) && !digitalRead(IMD_PIN)){
+      imd_fault = 0;
+      digitalWrite(IMD_LED, HIGH);
+    }
+  }
+
 }
 /************************************************
   decode_hex(): 
@@ -361,7 +393,7 @@ void updateLights(){
       digitalWrite(BMS_LED, LOW);
   }
 
-  if (!digitalRead(IMD_PIN)){
+  if (digitalRead(IMD_PIN)){
       imd_fault = 1;
   }
 
