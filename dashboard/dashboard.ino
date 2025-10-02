@@ -36,6 +36,7 @@ int BUZZER_PIN = 4;
 bool LED_ON = false;
 int bms_fault = 0;
 int imd_fault = 0;
+uint64_t fault_code = 0x00000000;
 // convention for CAN messages: source_dest_label
 CAN_message_t dash_vcu_buzzPlayed;
 
@@ -98,6 +99,62 @@ static const struct {
       {   5, 17400 }, {   0, 17151 }, {  -5, 16938 }, { -10, 16757 },
       { -15, 16609 }, { -20, 16487 }, { -25, 16387 }, { -30, 16308 }
   };
+  //LUT for BMS Fault codes
+  static const struct {
+    uint64_t hex_fault;
+    const char* description_fault;
+  } faultCodeMap[] = {
+    {0x80000000, "Cell Bank Fault"},
+    {0x40000000, "Cell Voltage Over 5V Fault"},
+    {0x20000000, "Current Sensor Fault"},
+    {0x10000000, "Cell Open Wiring Fault"},
+    {0x08000000, "Low Cell Volage Fault"},
+    {0x04000000, "Weak Cell Fault"},
+    {0x02000000, "Cell Balancing Stuck Off Fault"},
+    {0x01000000, "Internal Cell Communication Fault"},
+    {0x00800000, "Charge-Enable Relay Fault"},
+    {0x00400000, "Invalid Input Supply Fault"},
+    {0x00200000, "High Voltge Isolation Fault"},
+    {0x00100000, "Redundant Power Supply Fault"},
+    {0x00080000, "CAN Communication Fault"},
+    {0x00040000, "Thermistor Fault"},
+    {0x00020000, "Fan Monitor Fault"},
+    {0x00010000, "Weak Pack Fault"},
+    {0x00008000, "Pack Too Hot Fault"},
+    {0x00004000, "Lowest Cell Voltage Too Low Fault"},
+    {0x00002000, "Highest Cell Voltage Too High Fault"},
+    {0x00001000, "Internal Logic Fault"},
+    {0x00000800, "Internal Heatsink Thermistor Fault"},
+    {0x00000400, "Internal Hardware Fault"},
+    {0x00000200, "Charger Safety Relay Fault"},
+    {0x00000100, "Discharge-Enable Relay Fault"},
+    {0x00000080, "High Voltage Interlock Signal Fault"},
+    {0x00000040, "Precharge Circuit Malfunction"},
+    {0x00000020, "Abnormal State of Charge Behavior"},
+    {0x00000010, "Charge Interlock"},
+};
+
+/*decode_fault function
+Args:
+  hex_fault -> 64bit fault code in hex
+Returns:
+  fault code -> Corresponding fault code description string
+
+*/
+const char* decode_fault(uint64_t hex_fault{
+    size_t tableSize = sizeof(faultCodeMap) / sizeof(faultCodeMap[0]);
+
+    for (size_t i=0; i < tableSize; i++){
+      if (faultCodeMap[i] == hex_fault){
+        return faultCodeMap[i].description_fault;
+      }
+    }
+    return NULL;
+
+
+}
+
+
 
 /************************************************
   motorControllerToCelsius: 
@@ -209,7 +266,11 @@ void loop() {
       } 
     } else if (incoming_message.id == 0x301) {
       battery_percentage = incoming_message.buf[4]/2;
-    } else {                                                      // Errors from the Car to Display
+    } else if (incoming_message.id == 0x303){ // Fault Code Display
+      display_fault_description(decode_fault(incoming_message));
+      
+
+    }else {                                                      // Errors from the Car to Display
       // switch (incoming_message.id){
       //   case 0x500: //PotBrake error messages
       //     sendPotbrakeError(incoming_message.buf[0]);
@@ -410,4 +471,17 @@ void updateLights(){
       digitalWrite(IMD_LED, HIGH);
     }
   }
+}
+
+void display_fault_description(const* char description){
+    char nextion_formatted_message[] = 'faultcode.txt=\"'; 
+    int i = sizeof(nextion_formatted_message[]);
+    int j =0;
+    while (description[i] != "\n"){
+      nextion_formatted_message[i] = description[j];
+      i++;
+      j++;
+    }
+    nextion_formatted_message[] = '\"';
+    sendEndCommand();
 }
