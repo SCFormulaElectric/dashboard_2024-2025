@@ -267,7 +267,7 @@ void loop() {
     } else if (incoming_message.id == 0x301) {
       battery_percentage = incoming_message.buf[4]/2;
     } else if (incoming_message.id == 0x303){ // Fault Code Display
-      uint64_t = received_fault_code = 0;
+      uint64_t received_fault_code = 0;
       for (int i =0; i < 8; i++){
         received_fault_code |= (uint64_t)incoming_message.buf[i] << (8*i);
       }
@@ -481,8 +481,8 @@ void updateLights(){
 void display_fault_description(const char* description){
     if (description == NULL)
         return;
-    Serial3.print('faultcode.txt=\"');
+    Serial3.print("faultcode.txt=\"");
     Serial3.print(description);
-    Serial3.print('\"')
+    Serial3.print("\"");
     sendEndCommand();
 }
