@@ -141,11 +141,11 @@ Returns:
   fault code -> Corresponding fault code description string
 
 */
-const char* decode_fault(uint64_t hex_fault{
+const char* decode_fault(uint64_t hex_fault){
     size_t tableSize = sizeof(faultCodeMap) / sizeof(faultCodeMap[0]);
 
     for (size_t i=0; i < tableSize; i++){
-      if (faultCodeMap[i] == hex_fault){
+      if (faultCodeMap[i].hex_fault == hex_fault){
         return faultCodeMap[i].description_fault;
       }
     }
@@ -267,7 +267,12 @@ void loop() {
     } else if (incoming_message.id == 0x301) {
       battery_percentage = incoming_message.buf[4]/2;
     } else if (incoming_message.id == 0x303){ // Fault Code Display
-      display_fault_description(decode_fault(incoming_message));
+      uint64_t = received_fault_code = 0;
+      for (int i =0; i < 8; i++){
+        received_fault_code |= (uint64_t)incoming_message.buf[i] << (8*i);
+      }
+      const char* fault_description = decode_fault(received_fault_code);
+      display_fault_description(fault_description);
       
 
     }else {                                                      // Errors from the Car to Display
@@ -473,15 +478,11 @@ void updateLights(){
   }
 }
 
-void display_fault_description(const* char description){
-    char nextion_formatted_message[] = 'faultcode.txt=\"'; 
-    int i = sizeof(nextion_formatted_message[]);
-    int j =0;
-    while (description[i] != "\n"){
-      nextion_formatted_message[i] = description[j];
-      i++;
-      j++;
-    }
-    nextion_formatted_message[] = '\"';
+void display_fault_description(const char* description){
+    if (description == NULL)
+        return;
+    Serial3.print('faultcode.txt=\"');
+    Serial3.print(description);
+    Serial3.print('\"')
     sendEndCommand();
 }
