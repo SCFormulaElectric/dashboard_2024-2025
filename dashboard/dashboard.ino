@@ -36,7 +36,11 @@ int BUZZER_PIN = 4;
 bool LED_ON = false;
 int bms_fault = 0;
 int imd_fault = 0;
-uint64_t fault_code = 0x00000000;
+uint32_t fault_code = 0x00000000;
+int btr_current = 0;
+int btr_voltage = 0;
+int btr_temp = 0;
+
 // convention for CAN messages: source_dest_label
 CAN_message_t dash_vcu_buzzPlayed;
 
@@ -101,7 +105,7 @@ static const struct {
   };
   //LUT for BMS Fault codes
   static const struct {
-    uint64_t hex_fault;
+    uint32_t hex_fault;
     const char* description_fault;
   } faultCodeMap[] = {
     {0x80000000, "Cell Bank Fault"},
@@ -141,7 +145,7 @@ Returns:
   fault code -> Corresponding fault code description string
 
 */
-const char* decode_fault(uint64_t hex_fault){
+const char* decode_fault(uint32_t hex_fault){
     size_t tableSize = sizeof(faultCodeMap) / sizeof(faultCodeMap[0]);
 
     for (size_t i=0; i < tableSize; i++){
@@ -234,6 +238,11 @@ void loop() {
   sendNumberToNextion("probat", battery_percentage);  
   sendNumberToNextion("numspeed", speed);  
   sendNumberToNextion("mtrctrltemp", motor_controller_temperature);  
+  sendNumberToNextion("btr_current", btr_current);
+  sendNumberToNextion("btr_voltage", btr_voltage);
+  sendNumberToNextion("btr_temp", btr_temp);
+
+
   updateMotorTemperatureColor(motor_temperature);
   updateMotorControllerTemperatureColor(motor_controller_temperature);
 
@@ -266,16 +275,45 @@ void loop() {
       } 
     } else if (incoming_message.id == 0x301) {
       battery_percentage = incoming_message.buf[4]/2;
-    } else if (incoming_message.id == 0x303){ // Fault Code Display
-      uint64_t received_fault_code = 0;
-      for (int i =0; i < 8; i++){
-        received_fault_code |= (uint64_t)incoming_message.buf[i] << (8*i);
-      }
-      const char* fault_description = decode_fault(received_fault_code);
-      display_fault_description(fault_description);
-      
+      btr_current = incoming_message.buf[0];
+      btr_voltage = incoming_message.buf[2];
+    } else if(incoming_message.id == 0x302) {
+      btr_temp = incoming_message.buf[4];
+      } 
+  else if (incoming_message.id == 0x303) { // Fault Code Display
+      uint32_t received_fault_code = 0;
+      size_t tableSize = sizeof(faultCodeMap) / sizeof(faultCodeMap[0]);
+      char* fault_description = NULL;
+      size_t fault_desc_len = 0;
 
-    }else {                                                      // Errors from the Car to Display
+      for (int i = 0; i < 4; i++) {
+          received_fault_code |= (uint32_t)incoming_message.buf[i] << (8 * i);
+      }
+
+      for (size_t j = 0; j < tableSize; j++) {
+          if ((faultCodeMap[j].hex_fault & received_fault_code) != 0){
+              size_t new_part_len = strlen(faultCodeMap[j].description_fault);
+              char* new_buffer = realloc(fault_description, fault_desc_len + new_part_len + 3);
+              if (!new_buffer) {
+                  free(fault_description);
+              }
+              fault_description = new_buffer;
+              if (fault_desc_len > 0) {
+                  fault_description[0] = '\0';
+              } else {
+                  strcat(fault_description, ", ");
+                  fault_desc_len += 2;
+              }
+              strcat(fault_description, faultCodeMap[j].description_fault);
+              fault_desc_len += new_part_len;
+          }
+      }
+      display_fault_description(fault_description);
+      free(fault_description);
+  }
+
+
+    else {                                                      // Errors from the Car to Display
       // switch (incoming_message.id){
       //   case 0x500: //PotBrake error messages
       //     sendPotbrakeError(incoming_message.buf[0]);
