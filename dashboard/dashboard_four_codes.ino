@@ -546,7 +546,9 @@ void display_faults(size_t num_err, const char* description){
     if (description == NULL)
         return;
     
-    Serial3.print("faultcode.txt=\"");
+    Serial3.print("faultcode");
+    Serial3.print(num_err);
+    Serial3.print(".txt=\"");
     Serial3.print("Error Code ");
     Serial3.print(num_err);
     Serial3.print(": ");
