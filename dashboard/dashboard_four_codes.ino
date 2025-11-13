@@ -320,7 +320,7 @@ void loop() {
 
   }
 
-    }else {                                                      // Errors from the Car to Display
+    else {                                                      // Errors from the Car to Display
       // switch (incoming_message.id){
       //   case 0x500: //PotBrake error messages
       //     sendPotbrakeError(incoming_message.buf[0]);
