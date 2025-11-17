@@ -1,4 +1,5 @@
-/*
+/* DASHBOARD SCFE'25 
+UPDATED TO INCLUDE BMS errors
   This is the ULTIMATE program for Teensy.
   Teensy is the communicator between GEVCU and Nextion Display.
   Teensy is connected to the display using RX/TX, pin 8 and 7 respectively.
@@ -36,11 +37,9 @@ int BUZZER_PIN = 4;
 bool LED_ON = false;
 int bms_fault = 0;
 int imd_fault = 0;
-uint32_t fault_code = 0x00000000;
-int btr_current = 0;
-int btr_voltage = 0;
-int btr_temp = 0;
-
+uint32_t current_bms_faults = 0;
+uint32_t displayed_bms_faults[3] = {0, 0, 0};
+String bms_error_slots[3] = {"err1", "err2", "err3"};
 // convention for CAN messages: source_dest_label
 CAN_message_t dash_vcu_buzzPlayed;
 
@@ -103,10 +102,37 @@ static const struct {
       {   5, 17400 }, {   0, 17151 }, {  -5, 16938 }, { -10, 16757 },
       { -15, 16609 }, { -20, 16487 }, { -25, 16387 }, { -30, 16308 }
   };
-  //LUT for BMS Fault codes
+
+/************************************************
+  motorControllerToCelsius: 
+    Function to convert motor controller temp to celsius
+  Args: 
+    reading (uint_16_t): first parameter
+      raw hex bytes of the motor controller temperature msg
+  Returns:
+    double
+************************************************/
+int motorControllerToCelsius(uint16_t reading) {
+    for (int i = 1; i < (int)(sizeof(controllerTempLookup) / sizeof(controllerTempLookup[0])); ++i) {
+        if (reading >= controllerTempLookup[i].value) {
+            double t1 = controllerTempLookup[i-1].tempC;
+            double t2 = controllerTempLookup[i].tempC;
+            double v1 = controllerTempLookup[i-1].value;
+            double v2 = controllerTempLookup[i].value;
+
+            double ratio = (reading - v2) / (v1 - v2);
+            double result = t2 + ratio * (t1 - t2);
+            return (int)result; // Truncate fractional part
+        }
+    }
+    return (int)controllerTempLookup[sizeof(controllerTempLookup) / sizeof(controllerTempLookup[0]) - 1].tempC;
+}
+
+/* ERROR CODE LUT & FUNCTION*/
+void sendTextToNextion(String component, String msg); //defined below, fix compilation error
   static const struct {
     uint32_t hex_fault;
-    const char* description_fault;
+    String description_fault; 
   } faultCodeMap[] = {
     {0x80000000, "Cell Bank Fault"},
     {0x40000000, "Cell Voltage Over 5V Fault"},
@@ -138,53 +164,7 @@ static const struct {
     {0x00000010, "Charge Interlock"},
 };
 
-/*decode_fault function
-Args:
-  hex_fault -> 64bit fault code in hex
-Returns:
-  fault code -> Corresponding fault code description string
-
-*/
-const char* decode_fault(uint32_t hex_fault){
-    size_t tableSize = sizeof(faultCodeMap) / sizeof(faultCodeMap[0]);
-
-    for (size_t i=0; i < tableSize; i++){
-      if (faultCodeMap[i].hex_fault == hex_fault){
-        return faultCodeMap[i].description_fault;
-      }
-    }
-    return NULL;
-
-
-}
-
-
-
-/************************************************
-  motorControllerToCelsius: 
-    Function to convert motor controller temp to celsius
-  Args: 
-    reading (uint_16_t): first parameter
-      raw hex bytes of the motor controller temperature msg
-  Returns:
-    double
-************************************************/
-int motorControllerToCelsius(uint16_t reading) {
-    for (int i = 1; i < (int)(sizeof(controllerTempLookup) / sizeof(controllerTempLookup[0])); ++i) {
-        if (reading >= controllerTempLookup[i].value) {
-            double t1 = controllerTempLookup[i-1].tempC;
-            double t2 = controllerTempLookup[i].tempC;
-            double v1 = controllerTempLookup[i-1].value;
-            double v2 = controllerTempLookup[i].value;
-
-            double ratio = (reading - v2) / (v1 - v2);
-            double result = t2 + ratio * (t1 - t2);
-            return (int)result; // Truncate fractional part
-        }
-    }
-    return (int)controllerTempLookup[sizeof(controllerTempLookup) / sizeof(controllerTempLookup[0]) - 1].tempC;
-}
-
+const int NUM_BMS_FAULT_FLAGS = sizeof(faultCodeMap) / sizeof(faultCodeMap[0]);
 
 int speedToMPH(uint16_t reading) {
     const int NMAX_IN_NDRIVE = 5000; 
@@ -238,11 +218,6 @@ void loop() {
   sendNumberToNextion("probat", battery_percentage);  
   sendNumberToNextion("numspeed", speed);  
   sendNumberToNextion("mtrctrltemp", motor_controller_temperature);  
-  sendNumberToNextion("btr_current", btr_current);
-  sendNumberToNextion("btr_voltage", btr_voltage);
-  sendNumberToNextion("btr_temp", btr_temp);
-
-
   updateMotorTemperatureColor(motor_temperature);
   updateMotorControllerTemperatureColor(motor_controller_temperature);
 
@@ -274,45 +249,15 @@ void loop() {
       
       } 
     } else if (incoming_message.id == 0x301) {
-      battery_percentage = incoming_message.buf[4]/2;
-      btr_current = incoming_message.buf[0];
-      btr_voltage = incoming_message.buf[2];
-    } else if(incoming_message.id == 0x302) {
-      btr_temp = incoming_message.buf[4];
-      } 
-  else if (incoming_message.id == 0x303) { // Fault Code Display
-      uint32_t received_fault_code = 0;
-      size_t tableSize = sizeof(faultCodeMap) / sizeof(faultCodeMap[0]);
-      char* fault_description = NULL;
-      size_t fault_desc_len = 0;
+      battery_percentage = incoming_message.buf[4]/2
+    } else if (incoming_message.id == 0x303){
+      current_bms_faults = (uint32_t)incoming_message.buf[3] << 24 |
+                             (uint32_t)incoming_message.buf[2] << 16 |
+                             (uint32_t)incoming_message.buf[1] << 8  |
+                             (uint32_t)incoming_message.buf[0];
+      updateBmsFaultDisplay();
 
-      for (int i = 0; i < 4; i++) {
-          received_fault_code |= (uint32_t)incoming_message.buf[i] << (8 * i);
-      }
-
-      for (size_t j = 0; j < tableSize; j++) {
-          if ((faultCodeMap[j].hex_fault & received_fault_code) != 0){
-              size_t new_part_len = strlen(faultCodeMap[j].description_fault);
-              char* new_buffer = realloc(fault_description, fault_desc_len + new_part_len + 3);
-              if (!new_buffer) {
-                  free(fault_description);
-              }
-              fault_description = new_buffer;
-              if (fault_desc_len > 0) {
-                  fault_description[0] = '\0';
-              } else {
-                  strcat(fault_description, ", ");
-                  fault_desc_len += 2;
-              }
-              strcat(fault_description, faultCodeMap[j].description_fault);
-              fault_desc_len += new_part_len;
-          }
-      }
-      display_fault_description(fault_description);
-      free(fault_description);
-  }
-
-
+    }
     else {                                                      // Errors from the Car to Display
       // switch (incoming_message.id){
       //   case 0x500: //PotBrake error messages
@@ -461,6 +406,64 @@ void sendEndCommand() {
   Serial3.write(0xFF);
   Serial3.write(0xFF);
 }
+void updateBmsFaultDisplay() {
+  
+  // Clear inactive faults loop
+  for (int i = 0; i < 3; i++) {
+    uint32_t displayed_flag = displayed_bms_faults[i];
+    
+    // If had a error
+    if (displayed_flag != 0) {
+      
+      
+      if ((current_bms_faults & displayed_flag) == 0) {// but its gone
+        //clear
+        displayed_bms_faults[i] = 0; 
+        sendTextToNextion(bms_error_slots[i], ""); 
+      }
+    }
+  }
+
+  
+  // Add new active faults
+  for (int i = 0; i < NUM_BMS_FAULT_FLAGS; i++) {
+    uint32_t flag_to_check = faultCodeMap[i].hex_fault;
+
+    // 
+    // faultcode may include multiple faults, bw and to select single fault
+    if ((current_bms_faults & flag_to_check) != 0) {
+      
+      // check if it is displayed
+      bool is_displayed = false;
+      for (int j = 0; j < 3; j++) {
+        if (displayed_bms_faults[j] == flag_to_check) {
+          is_displayed = true;
+          break;
+        }
+      }
+
+      
+      if (!is_displayed) {
+        int empty_slot = -1;
+        for (int j = 0; j < 3; j++) {
+          if (displayed_bms_faults[j] == 0) { 
+            empty_slot = j;
+            break; // first empty slot
+          }
+        }
+
+        // If empty
+        if (empty_slot != -1) {
+          displayed_bms_faults[empty_slot] = flag_to_check;
+          
+          String msg = faultCodeMap[i].description_fault; 
+          sendTextToNextion(bms_error_slots[empty_slot], msg); // Send to Nextion
+        }
+  
+      }
+    }
+  }
+}
 
 void updateMotorControllerTemperatureColor(int motor_controller_temperature){
   if (motor_controller_temperature > 85){ // RED
@@ -516,11 +519,10 @@ void updateLights(){
   }
 }
 
-void display_fault_description(const char* description){
-    if (description == NULL)
-        return;
-    Serial3.print("faultcode.txt=\"");
-    Serial3.print(description);
-    Serial3.print("\"");
-    sendEndCommand();
+void sendTextToNextion(String component, String msg) {
+  Serial3.print(component);
+  Serial3.print(".txt=\"");
+  Serial3.print(msg);
+  Serial3.print("\"");
+  sendEndCommand();
 }
