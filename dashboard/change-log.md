@@ -1,4 +1,5 @@
 11/17/25
+
 The main change was displaying multiple faults from the BMS to support accumulator debugging.
 Main logic:
 Check for the right can id 0x303 (orionbms can id)
