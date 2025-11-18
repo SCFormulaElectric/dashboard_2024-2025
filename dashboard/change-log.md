@@ -22,3 +22,5 @@ The main change was displaying multiple faults from the BMS to support accumulat
     * Represents textboxes that can display fault codes, 1=taken, 0=free
 * Added `String bms_error_slots[3] = {"err1", "err2", "err3"};`
     * component names in nextion, used to send error descriptions
+
+Link to library used in the .ino file: https://github.com/tonton81/FlexCAN_T4/tree/master
