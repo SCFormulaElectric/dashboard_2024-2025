@@ -39,6 +39,7 @@ int bms_fault = 0;
 int imd_fault = 0;
 uint32_t current_bms_faults = 0;
 uint32_t displayed_bms_faults[3] = {0, 0, 0};
+static unsigned long last_update_display = 0;
 String bms_error_slots[3] = {"err1", "err2", "err3"};
 // convention for CAN messages: source_dest_label
 CAN_message_t dash_vcu_buzzPlayed;
@@ -213,6 +214,9 @@ void setup() {
 }
 
 void loop() {
+
+  if (millis() - last_update_display  > 200){ // here, we group the display updating commands in one if statement so that we only update every 200ms (5hz)
+    last_update_display = millis();                             // should help with can packets dropping 
   sendNumberToNextion("mtrtemp", motor_temperature);  
   sendNumberToNextion("numbat", battery_percentage);  
   sendNumberToNextion("probat", battery_percentage);  
@@ -220,6 +224,8 @@ void loop() {
   sendNumberToNextion("mtrctrltemp", motor_controller_temperature);  
   updateMotorTemperatureColor(motor_temperature);
   updateMotorControllerTemperatureColor(motor_controller_temperature);
+  updateBmsFaultDisplay();
+  }
 
 
   /* 
@@ -255,7 +261,7 @@ void loop() {
                              (uint32_t)incoming_message.buf[2] << 16 |
                              (uint32_t)incoming_message.buf[1] << 8  |
                              (uint32_t)incoming_message.buf[0];
-      updateBmsFaultDisplay();
+      //updateBmsFaultDisplay();
 
     }
     else {                                                      // Errors from the Car to Display
