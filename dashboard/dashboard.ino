@@ -249,7 +249,7 @@ void loop() {
       
       } 
     } else if (incoming_message.id == 0x301) {
-      battery_percentage = incoming_message.buf[4]/2
+      battery_percentage = incoming_message.buf[4]/2;
     } else if (incoming_message.id == 0x303){
       current_bms_faults = (uint32_t)incoming_message.buf[3] << 24 |
                              (uint32_t)incoming_message.buf[2] << 16 |
