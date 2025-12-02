@@ -1,5 +1,5 @@
-##12/1/25
-'CAN PACKETS DROPPING' 
+## 12/1/25
+`CAN PACKETS DROPPING`
 Added code to reduce display refresh rate (5hz), aiming to limit serial messages and eliminate serial buffer overflow. Should help w/ CAN PACKETS
 [BR is 9600 bps, teensy operates at 480MHz, so, even if the for loop took 10,000 Clock cycles, which shouldn't be because there is minimal division and only a state machine, can parsing, there will be
 serial messages sent way more frequently than the BR can handle, causing buffer to fill, causing teensy to freeze, causing CAN PACKETS DROPPING]
